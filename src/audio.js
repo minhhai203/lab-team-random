@@ -36,7 +36,7 @@ export function play(name) {
   source.buffer=buffers[name];
   const now=context.currentTime;
   const duration=name==='tick'?Math.min(.32,source.buffer.duration):source.buffer.duration;
-  const volume=name==='tick'?.28:.65;
+  const volume=name==='tick'?.28:name==='open'?.32:.65;
   gain.gain.setValueAtTime(volume,now);
   if(name==='tick') {
     gain.gain.setValueAtTime(volume,now+Math.max(0,duration-.04));
