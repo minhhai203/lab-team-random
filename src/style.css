@@ -151,3 +151,8 @@ html:has(#opening-overlay),body:has(#opening-overlay){overflow:hidden}
 @media(prefers-reduced-motion:reduce){
   .roulette-screen .reel-item.is-winner{transform:none}
 }
+/* Input validation is visible beside the affected list. */
+.field.has-error{border-color:#ef9a81}
+.field.has-error:focus-within{border-color:#ffb59e}
+.field-error{display:block;color:#ffc1ae;background:#7f34322b;border-left:3px solid #ef9a81;padding:9px 11px;margin:0 0 12px;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.field-error[hidden]{display:none}

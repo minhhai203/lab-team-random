@@ -2,6 +2,7 @@ import './style.css';
 import { draw, lines, shuffle } from './draw.js';
 import { unlockAudio, play, isMuted, toggleMute, stopAudio } from './audio.js';
 import { teamAssignments, itemUnderNeedle } from './results.js';
+import { validateLists } from './validation.js';
 
 const app = document.querySelector('#app');
 const KEY = 'h201-draw-v1';
@@ -19,6 +20,7 @@ const state = {
   stage: saved.groups?.length ? (saved.revealed >= saved.groups.length ? 'done' : 'revealing') : 'setup'
 };
 let timer, spinFrame, openingDispose;
+let preparing = false;
 let spinning = false;
 let openingPhase = 'idle';
 let spinGeneration = 0;
@@ -31,16 +33,26 @@ function countInfo() {
   const teams=lines(state.teams).length, topics=lines(state.topics).length;
   const count = document.querySelector('#counts');
   if (!count) return;
+  const duplicates=validateLists(state.teams,state.topics);
   count.textContent = topics && teams ? `${teams} đội / ${topics} đề · ${Math.floor(teams/topics)}–${Math.ceil(teams/topics)} đội mỗi đề` : 'Mỗi dòng là một đội hoặc một đề';
   document.querySelector('#team-count').textContent = `${num(teams)} ĐỘI`;
   document.querySelector('#topic-count').textContent = `${num(topics)} ĐỀ`;
-  document.querySelector('#start').disabled = !(teams && topics);
+  for (const [id, items, label] of [['teams',duplicates.teams,'Tên đội'],['topics',duplicates.topics,'Mã đề']]) {
+    const input=document.querySelector(`#${id}`), error=document.querySelector(`#${id}-error`);
+    const hasDuplicates=items.length>0;
+    input.setAttribute('aria-invalid',String(hasDuplicates));
+    input.closest('.field').classList.toggle('has-error',hasDuplicates);
+    error.textContent=hasDuplicates ? `${label} bị trùng: ${items.map(item=>`${item.label} (dòng ${item.lines.join(', ')})`).join('; ')}. Vui lòng sửa trước khi bốc.` : '';
+    error.hidden=!hasDuplicates;
+  }
+  document.querySelector('#start').disabled = preparing || !(teams && topics) || duplicates.teams.length>0 || duplicates.topics.length>0;
 }
+
 function setup() {
   return `<section class="setup" aria-labelledby="setup-title">
     <div class="setup-heading"><div><span class="eyebrow"><span class="diamond">◆</span> BƯỚC 01 / CHUẨN BỊ</span><h2 id="setup-title">Chuẩn bị mở hòm</h2><p>Dán danh sách của bạn vào đây. Mỗi dòng là một mục.</p></div><span class="setup-number">01 <span>/ 02</span></span></div>
-    <div class="inputs"><label class="field"><span class="field-top"><span><b>01</b> DANH SÁCH ĐỘI</span><em id="team-count">00 ĐỘI</em></span><textarea id="teams" placeholder="Ví dụ:\nĐội Mặt Trời\nĐội Sao Băng\nĐội Ngân Hà" spellcheck="false">${esc(state.teams)}</textarea><span class="field-hint">MỖI DÒNG MỘT ĐỘI</span></label>
-    <label class="field"><span class="field-top"><span><b>02</b> MÃ ĐỀ / TÊN ĐỀ</span><em id="topic-count">00 ĐỀ</em></span><textarea id="topics" placeholder="Ví dụ:\nD01 - Hành trình dữ liệu\nD02 - Ý tưởng sáng tạo\nD03 - Thử thách AI" spellcheck="false">${esc(state.topics)}</textarea><span class="field-hint">MỖI DÒNG MỘT MÃ ĐỀ HOẶC MÃ + TÊN ĐỀ</span></label></div>
+    <div class="inputs"><label class="field"><span class="field-top"><span><b>01</b> DANH SÁCH ĐỘI</span><em id="team-count">00 ĐỘI</em></span><textarea id="teams" aria-describedby="teams-hint teams-error" placeholder="Ví dụ:\nĐội Mặt Trời\nĐội Sao Băng\nĐội Ngân Hà" spellcheck="false">${esc(state.teams)}</textarea><span class="field-error" id="teams-error" role="status" hidden></span><span class="field-hint" id="teams-hint">MỖI DÒNG MỘT ĐỘI</span></label>
+    <label class="field"><span class="field-top"><span><b>02</b> MÃ ĐỀ / TÊN ĐỀ</span><em id="topic-count">00 ĐỀ</em></span><textarea id="topics" aria-describedby="topics-hint topics-error" placeholder="Ví dụ:\nD01 - Hành trình dữ liệu\nD02 - Ý tưởng sáng tạo\nD03 - Thử thách AI" spellcheck="false">${esc(state.topics)}</textarea><span class="field-error" id="topics-error" role="status" hidden></span><span class="field-hint" id="topics-hint">MỖI DÒNG MỘT MÃ ĐỀ HOẶC MÃ + TÊN ĐỀ (VD: D01 - TÊN ĐỀ)</span></label></div>
     <fieldset class="opening-mode"><legend>CÁCH MỞ HÒM</legend><div class="opening-mode-options"><label><input type="radio" name="opening-mode" value="manual" ${state.mode==='manual'?'checked':''}><span><strong>Mở lần lượt</strong><small>Bấm để mở từng hòm.</small></span></label><label><input type="radio" name="opening-mode" value="auto" ${state.mode==='auto'?'checked':''}><span><strong>Mở tất cả</strong><small>Tự động mở; có thể dừng sau lượt đang quay.</small></span></label></div></fieldset>
     <div class="setup-footer"><div class="rule"><span class="rule-icon">◈</span><span><strong>CHIA ĐỀ CÂN BẰNG</strong><small id="counts">Mỗi dòng là một đội hoặc một đề</small></span></div><button class="primary" id="start" disabled>MỞ HÒM ĐẦU TIÊN <span>↗</span></button></div>
   </section>`;
@@ -90,9 +102,16 @@ function render() {
   }
 }
 async function start() {
-  const teams=lines(state.teams), topics=lines(state.topics); if(!teams.length || !topics.length) return;
-  const button=document.querySelector('#start'); button.disabled=true; button.textContent='ĐANG CHUẨN BỊ...';
+  if (preparing) return;
+  let teams=lines(state.teams), topics=lines(state.topics);
+  let duplicates=validateLists(state.teams,state.topics);
+  if(!teams.length || !topics.length || duplicates.teams.length || duplicates.topics.length) { countInfo(); return; }
+  const button=document.querySelector('#start'); preparing=true; countInfo(); button.textContent='ĐANG CHUẨN BỊ...';
   await unlockAudio();
+  // Inputs remain editable while audio loads; validate the current values again before drawing.
+  teams=lines(state.teams);topics=lines(state.topics);duplicates=validateLists(state.teams,state.topics);
+  preparing=false;
+  if(!teams.length || !topics.length || duplicates.teams.length || duplicates.topics.length) { button.innerHTML='MỞ HÒM ĐẦU TIÊN <span>↗</span>';countInfo();return; }
   state.groups=shuffle(draw(teams, topics)); state.revealed=0; state.stage='revealing'; state.waiting=false; state.pauseRequested=false; save();
   spin();
   document.querySelector('.content').scrollIntoView({behavior: reduced?'auto':'smooth',block:'start'});
